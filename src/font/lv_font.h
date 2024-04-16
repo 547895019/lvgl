@@ -81,6 +81,9 @@ typedef struct _lv_font_t {
 #if LV_USE_USER_DATA
     void * user_data;               /**< Custom user data for font.*/
 #endif
+#ifdef LV_CONF_SUPPORT_WASM
+    void *module_inst;
+#endif
 } lv_font_t;
 
 /**********************

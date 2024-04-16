@@ -178,7 +178,9 @@ lv_timer_t * lv_timer_create(lv_timer_cb_t timer_xcb, uint32_t period, void * us
     new_timer->paused = 0;
     new_timer->last_run = lv_tick_get();
     new_timer->user_data = user_data;
-
+#ifdef LV_CONF_SUPPORT_WASM
+    new_timer->module_inst = NULL;
+#endif
     timer_created = true;
 
     return new_timer;
@@ -310,7 +312,19 @@ static bool lv_timer_exec(lv_timer_t * timer)
         if(timer->repeat_count > 0) timer->repeat_count--;
         timer->last_run = lv_tick_get();
         TIMER_TRACE("calling timer callback: %p", *((void **)&timer->timer_cb));
+#ifdef LV_CONF_SUPPORT_WASM
+        if(timer->timer_cb && original_repeat_count != 0) {
+            if (timer->module_inst) {
+                uint32_t argv[1] = {(uint32_t)timer};
+
+                lv_run_wasm(timer->module_inst, timer->timer_cb, 1, argv);
+            } else {
+                timer->timer_cb(timer);
+            }
+        }
+#else
         if(timer->timer_cb && original_repeat_count != 0) timer->timer_cb(timer);
+#endif
         TIMER_TRACE("timer callback %p finished", *((void **)&timer->timer_cb));
         LV_ASSERT_MEM_INTEGRITY();
         exec = true;

@@ -48,6 +48,9 @@ typedef struct _lv_timer_t {
     void * user_data; /**< Custom user data*/
     int32_t repeat_count; /**< 1: One time;  -1 : infinity;  n>0: residual times*/
     uint32_t paused : 1;
+#ifdef LV_CONF_SUPPORT_WASM
+    void *module_inst;
+#endif
 } lv_timer_t;
 
 /**********************

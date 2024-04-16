@@ -132,6 +132,15 @@ typedef struct {
     const lv_area_t * area;
 } lv_cover_check_info_t;
 
+typedef struct _lv_event_dsc_t {
+    lv_event_cb_t cb;
+    void * user_data;
+    lv_event_code_t filter : 8;
+#ifdef LV_CONF_SUPPORT_WASM
+    void *module_inst;
+#endif
+} lv_event_dsc_t;
+
 /**********************
  * GLOBAL PROTOTYPES
  **********************/

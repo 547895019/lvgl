@@ -69,11 +69,296 @@ static int32_t kern_pair_16_compare(const void * ref, const void * element);
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
+ 
+ /**
+ * Free the allocated memories.
+ */
+void _lv_font_clean_up_fmt_txt(void)
+{
+#if LV_USE_FONT_COMPRESSED
+    if(LV_GC_ROOT(_lv_font_decompr_buf)) {
+        lv_mem_free(LV_GC_ROOT(_lv_font_decompr_buf));
+        LV_GC_ROOT(_lv_font_decompr_buf) = NULL;
+    }
+#endif
+}
 
+#ifdef LV_CONF_SUPPORT_WASM
+static void *wasm_map_ptr(const lv_font_t * font, const void *ptr)
+{
+    void *mapped_ptr;
+
+    if (font->module_inst) {
+        wasm_module_inst_t module_inst = (wasm_module_inst_t)font->module_inst;
+
+        mapped_ptr = addr_app_to_native((uint32_t)ptr);
+
+        if (!mapped_ptr) {
+            mapped_ptr = (void *)ptr;
+        }
+    } else {
+        mapped_ptr = (void *)ptr;
+    }
+
+    return mapped_ptr;
+}
 /**
  * Used as `get_glyph_bitmap` callback in LittelvGL's native font format if the font is uncompressed.
  * @param font pointer to font
- * @param unicode_letter a unicode letter which bitmap should be get
+ * @param unicode_letter an unicode letter which bitmap should be get
+ * @return pointer to the bitmap or NULL if not found
+ */
+const uint8_t * lv_font_get_bitmap_fmt_txt(const lv_font_t * font, uint32_t unicode_letter)
+{
+    if(unicode_letter == '\t') unicode_letter = ' ';
+
+    lv_font_fmt_txt_dsc_t * fdsc = (lv_font_fmt_txt_dsc_t *)wasm_map_ptr(font, font->dsc);
+    uint32_t gid = get_glyph_dsc_id(font, unicode_letter);
+    if(!gid) return NULL;
+
+    const lv_font_fmt_txt_glyph_dsc_t * gdsc = (const lv_font_fmt_txt_glyph_dsc_t *)wasm_map_ptr(font, &fdsc->glyph_dsc[gid]);
+
+    if(fdsc->bitmap_format == LV_FONT_FMT_TXT_PLAIN) {
+        const uint8_t *p_glyph_bitmap = (const uint8_t *)wasm_map_ptr(font, fdsc->glyph_bitmap);
+
+        return &p_glyph_bitmap[gdsc->bitmap_index];
+    }
+    /*Handle compressed bitmap*/
+    else {
+#if LV_USE_FONT_COMPRESSED
+        static size_t last_buf_size = 0;
+        if(LV_GC_ROOT(_lv_font_decompr_buf) == NULL) last_buf_size = 0;
+
+        uint32_t gsize = gdsc->box_w * gdsc->box_h;
+        if(gsize == 0) return NULL;
+
+        uint32_t buf_size = gsize;
+        /*Compute memory size needed to hold decompressed glyph, rounding up*/
+        switch(fdsc->bpp) {
+            case 1:
+                buf_size = (gsize + 7) >> 3;
+                break;
+            case 2:
+                buf_size = (gsize + 3) >> 2;
+                break;
+            case 3:
+                buf_size = (gsize + 1) >> 1;
+                break;
+            case 4:
+                buf_size = (gsize + 1) >> 1;
+                break;
+        }
+
+        if(last_buf_size < buf_size) {
+            uint8_t * tmp = lv_mem_realloc(LV_GC_ROOT(_lv_font_decompr_buf), buf_size);
+            LV_ASSERT_MALLOC(tmp);
+            if(tmp == NULL) return NULL;
+            LV_GC_ROOT(_lv_font_decompr_buf) = tmp;
+            last_buf_size = buf_size;
+        }
+
+        bool prefilter = fdsc->bitmap_format == LV_FONT_FMT_TXT_COMPRESSED ? true : false;
+        decompress(&fdsc->glyph_bitmap[gdsc->bitmap_index], LV_GC_ROOT(_lv_font_decompr_buf), gdsc->box_w, gdsc->box_h,
+                   (uint8_t)fdsc->bpp, prefilter);
+        return LV_GC_ROOT(_lv_font_decompr_buf);
+#else /*!LV_USE_FONT_COMPRESSED*/
+        LV_LOG_WARN("Compressed fonts is used but LV_USE_FONT_COMPRESSED is not enabled in lv_conf.h");
+        return NULL;
+#endif
+    }
+
+    /*If not returned earlier then the letter is not found in this font*/
+    return NULL;
+}
+
+/**
+ * Used as `get_glyph_dsc` callback in LittelvGL's native font format if the font is uncompressed.
+ * @param font_p pointer to font
+ * @param dsc_out store the result descriptor here
+ * @param letter an UNICODE letter code
+ * @return true: descriptor is successfully loaded into `dsc_out`.
+ *         false: the letter was not found, no data is loaded to `dsc_out`
+ */
+bool lv_font_get_glyph_dsc_fmt_txt(const lv_font_t * font, lv_font_glyph_dsc_t * dsc_out, uint32_t unicode_letter,
+                                   uint32_t unicode_letter_next)
+{
+    bool is_tab = false;
+    if(unicode_letter == '\t') {
+        unicode_letter = ' ';
+        is_tab = true;
+    }
+    lv_font_fmt_txt_dsc_t * fdsc = (lv_font_fmt_txt_dsc_t *)wasm_map_ptr(font, font->dsc);
+    uint32_t gid = get_glyph_dsc_id(font, unicode_letter);
+    if(!gid) return false;
+
+    int8_t kvalue = 0;
+    if(fdsc->kern_dsc) {
+        uint32_t gid_next = get_glyph_dsc_id(font, unicode_letter_next);
+        if(gid_next) {
+            kvalue = get_kern_value(font, gid, gid_next);
+        }
+    }
+
+    /*Put together a glyph dsc*/
+    const lv_font_fmt_txt_glyph_dsc_t * gdsc = (const lv_font_fmt_txt_glyph_dsc_t *)wasm_map_ptr(font, &fdsc->glyph_dsc[gid]);
+
+    int32_t kv = ((int32_t)((int32_t)kvalue * fdsc->kern_scale) >> 4);
+
+    uint32_t adv_w = gdsc->adv_w;
+    if(is_tab) adv_w *= 2;
+
+    adv_w += kv;
+    adv_w  = (adv_w + (1 << 3)) >> 4;
+
+    dsc_out->adv_w = adv_w;
+    dsc_out->box_h = gdsc->box_h;
+    dsc_out->box_w = gdsc->box_w;
+    dsc_out->ofs_x = gdsc->ofs_x;
+    dsc_out->ofs_y = gdsc->ofs_y;
+    dsc_out->bpp   = (uint8_t)fdsc->bpp;
+    dsc_out->is_placeholder = false;
+    
+    if(is_tab) dsc_out->box_w = dsc_out->box_w * 2;
+
+    return true;
+}
+
+/**********************
+ *   STATIC FUNCTIONS
+ **********************/
+
+static uint32_t get_glyph_dsc_id(const lv_font_t * font, uint32_t letter)
+{
+    if(letter == '\0') return 0;
+
+    lv_font_fmt_txt_dsc_t * fdsc = (lv_font_fmt_txt_dsc_t *)wasm_map_ptr(font, font->dsc);
+    lv_font_fmt_txt_glyph_cache_t * cache;
+    
+    if (fdsc->cache) {
+        cache = (lv_font_fmt_txt_glyph_cache_t *)wasm_map_ptr(font, fdsc->cache);
+    } else {
+        cache = NULL;
+    }
+
+    /*Check the cache first*/
+    if(cache && letter == cache->last_letter) return cache->last_glyph_id;
+
+    uint16_t i;
+    for(i = 0; i < fdsc->cmap_num; i++) {
+        const lv_font_fmt_txt_cmap_t * cmaps = (const lv_font_fmt_txt_cmap_t *)wasm_map_ptr(font, fdsc->cmaps);
+
+        /*Relative code point*/
+        uint32_t rcp = letter - cmaps[i].range_start;
+        if(rcp > cmaps[i].range_length) continue;
+        uint32_t glyph_id = 0;
+        if(cmaps[i].type == LV_FONT_FMT_TXT_CMAP_FORMAT0_TINY) {
+            glyph_id = cmaps[i].glyph_id_start + rcp;
+        }
+        else if(cmaps[i].type == LV_FONT_FMT_TXT_CMAP_FORMAT0_FULL) {
+            const uint8_t * gid_ofs_8 = cmaps[i].glyph_id_ofs_list;
+            glyph_id = cmaps[i].glyph_id_start + gid_ofs_8[rcp];
+        }
+        else if(cmaps[i].type == LV_FONT_FMT_TXT_CMAP_SPARSE_TINY) {
+            uint16_t key = rcp;
+            uint16_t *unicode_list = (uint16_t *)wasm_map_ptr(font, cmaps[i].unicode_list);
+            uint16_t * p = _lv_utils_bsearch(&key, unicode_list, cmaps[i].list_length,
+                                             sizeof(unicode_list[0]), unicode_list_compare);
+            if(p) {
+                lv_uintptr_t ofs = p - unicode_list;
+                glyph_id = cmaps[i].glyph_id_start + ofs;
+            }
+        }
+        else if(cmaps[i].type == LV_FONT_FMT_TXT_CMAP_SPARSE_FULL) {
+            uint16_t key = rcp;
+            uint16_t *unicode_list = (uint16_t *)wasm_map_ptr(font, cmaps[i].unicode_list);
+            uint16_t * p = _lv_utils_bsearch(&key, unicode_list, cmaps[i].list_length,
+                                             sizeof(unicode_list[0]), unicode_list_compare);
+
+            if(p) {
+                lv_uintptr_t ofs = p - unicode_list;
+                const uint16_t * gid_ofs_16 = cmaps[i].glyph_id_ofs_list;
+                glyph_id = cmaps[i].glyph_id_start + gid_ofs_16[ofs];
+            }
+        }
+
+        /*Update the cache*/
+        if(cache) {
+            cache->last_letter = letter;
+            cache->last_glyph_id = glyph_id;
+        }
+        return glyph_id;
+    }
+
+    if(cache) {
+        cache->last_letter = letter;
+        cache->last_glyph_id = 0;
+    }
+    return 0;
+
+}
+
+static int8_t get_kern_value(const lv_font_t * font, uint32_t gid_left, uint32_t gid_right)
+{
+    lv_font_fmt_txt_dsc_t * fdsc = (lv_font_fmt_txt_dsc_t *)wasm_map_ptr(font, font->dsc);
+
+    int8_t value = 0;
+
+    if(fdsc->kern_classes == 0) {
+        /*Kern pairs*/
+        const lv_font_fmt_txt_kern_pair_t * kdsc = (const lv_font_fmt_txt_kern_pair_t *)wasm_map_ptr(font, fdsc->kern_dsc);
+        if(kdsc->glyph_ids_size == 0) {
+            /*Use binary search to find the kern value.
+             *The pairs are ordered left_id first, then right_id secondly.*/
+            const uint16_t * g_ids = wasm_map_ptr(font, kdsc->glyph_ids);
+            uint16_t g_id_both = (gid_right << 8) + gid_left; /*Create one number from the ids*/
+            uint16_t * kid_p = _lv_utils_bsearch(&g_id_both, g_ids, kdsc->pair_cnt, 2, kern_pair_8_compare);
+
+            /*If the `g_id_both` were found get its index from the pointer*/
+            if(kid_p) {
+                lv_uintptr_t ofs = kid_p - g_ids;
+                const uint8_t *p_value = (const uint8_t *)wasm_map_ptr(font, kdsc->values);
+                value = p_value[ofs];
+            }
+        }
+        else if(kdsc->glyph_ids_size == 1) {
+            /*Use binary search to find the kern value.
+             *The pairs are ordered left_id first, then right_id secondly.*/
+            const uint32_t * g_ids = (const uint32_t *)wasm_map_ptr(font, kdsc->glyph_ids);
+            uint32_t g_id_both = (gid_right << 16) + gid_left; /*Create one number from the ids*/
+            uint32_t * kid_p = _lv_utils_bsearch(&g_id_both, g_ids, kdsc->pair_cnt, 4, kern_pair_16_compare);
+
+            /*If the `g_id_both` were found get its index from the pointer*/
+            if(kid_p) {
+                lv_uintptr_t ofs = kid_p - g_ids;
+                const uint8_t *p_value = (const uint8_t *)wasm_map_ptr(font, kdsc->values);
+                value = p_value[ofs];
+            }
+
+        }
+        else {
+            /*Invalid value*/
+        }
+    }
+    else {
+        /*Kern classes*/
+        const lv_font_fmt_txt_kern_classes_t * kdsc = (const lv_font_fmt_txt_kern_classes_t *)wasm_map_ptr(font, fdsc->kern_dsc);
+        uint8_t left_class = ((const uint8_t *)wasm_map_ptr(font, kdsc->left_class_mapping))[gid_left];
+        uint8_t right_class = ((const uint8_t *)wasm_map_ptr(font, kdsc->right_class_mapping))[gid_right];
+
+        /*If class = 0, kerning not exist for that glyph
+         *else got the value form `class_pair_values` 2D array*/
+        if(left_class > 0 && right_class > 0) {
+            value = ((const uint8_t *)wasm_map_ptr(font, kdsc->class_pair_values))[(left_class - 1) * kdsc->right_class_cnt + (right_class - 1)];
+        }
+
+    }
+    return value;
+}
+#else
+/**
+ * Used as `get_glyph_bitmap` callback in LittelvGL's native font format if the font is uncompressed.
+ * @param font pointer to font
+ * @param unicode_letter an unicode letter which bitmap should be get
  * @return pointer to the bitmap or NULL if not found
  */
 const uint8_t * lv_font_get_bitmap_fmt_txt(const lv_font_t * font, uint32_t unicode_letter)
@@ -187,19 +472,6 @@ bool lv_font_get_glyph_dsc_fmt_txt(const lv_font_t * font, lv_font_glyph_dsc_t *
     if(is_tab) dsc_out->box_w = dsc_out->box_w * 2;
 
     return true;
-}
-
-/**
- * Free the allocated memories.
- */
-void _lv_font_clean_up_fmt_txt(void)
-{
-#if LV_USE_FONT_COMPRESSED
-    if(LV_GC_ROOT(_lv_font_decompr_buf)) {
-        lv_mem_free(LV_GC_ROOT(_lv_font_decompr_buf));
-        LV_GC_ROOT(_lv_font_decompr_buf) = NULL;
-    }
-#endif
 }
 
 /**********************
@@ -322,7 +594,7 @@ static int8_t get_kern_value(const lv_font_t * font, uint32_t gid_left, uint32_t
     }
     return value;
 }
-
+#endif
 static int32_t kern_pair_8_compare(const void * ref, const void * element)
 {
     const uint8_t * ref8_p = ref;

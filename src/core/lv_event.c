@@ -17,11 +17,7 @@
 /**********************
  *      TYPEDEFS
  **********************/
-typedef struct _lv_event_dsc_t {
-    lv_event_cb_t cb;
-    void * user_data;
-    lv_event_code_t filter : 8;
-} lv_event_dsc_t;
+
 
 /**********************
  *  STATIC PROTOTYPES
@@ -173,7 +169,9 @@ struct _lv_event_dsc_t * lv_obj_add_event_cb(lv_obj_t * obj, lv_event_cb_t event
     obj->spec_attr->event_dsc[obj->spec_attr->event_dsc_cnt - 1].cb = event_cb;
     obj->spec_attr->event_dsc[obj->spec_attr->event_dsc_cnt - 1].filter = filter;
     obj->spec_attr->event_dsc[obj->spec_attr->event_dsc_cnt - 1].user_data = user_data;
-
+#ifdef LV_CONF_SUPPORT_WASM
+    obj->spec_attr->event_dsc[obj->spec_attr->event_dsc_cnt - 1].module_inst = NULL;
+#endif
     return &obj->spec_attr->event_dsc[obj->spec_attr->event_dsc_cnt - 1];
 }
 
@@ -444,8 +442,16 @@ static lv_res_t event_send_core(lv_event_t * e)
            && (event_dsc->filter == (LV_EVENT_ALL | LV_EVENT_PREPROCESS) ||
                (event_dsc->filter & ~LV_EVENT_PREPROCESS) == e->code)) {
             e->user_data = event_dsc->user_data;
+#ifdef LV_CONF_SUPPORT_WASM
+            if (event_dsc->module_inst) {
+                uint32_t argv[1] = {(uint32_t)e};
+                lv_run_wasm(event_dsc->module_inst, event_dsc->cb, 1, argv);
+            } else {
+                event_dsc->cb(e);
+            }
+#else
             event_dsc->cb(e);
-
+#endif
             if(e->stop_processing) return LV_RES_OK;
             /*Stop if the object is deleted*/
             if(e->deleted) return LV_RES_INV;
@@ -464,7 +470,16 @@ static lv_res_t event_send_core(lv_event_t * e)
         if(event_dsc->cb && ((event_dsc->filter & LV_EVENT_PREPROCESS) == 0)
            && (event_dsc->filter == LV_EVENT_ALL || event_dsc->filter == e->code)) {
             e->user_data = event_dsc->user_data;
+#ifdef LV_CONF_SUPPORT_WASM
+            if (event_dsc->module_inst) {
+                uint32_t argv[1] = {(uint32_t)e};
+                lv_run_wasm(event_dsc->module_inst, event_dsc->cb, 1, argv);
+            } else {
+                event_dsc->cb(e);
+            }
+#else
             event_dsc->cb(e);
+#endif
 
             if(e->stop_processing) return LV_RES_OK;
             /*Stop if the object is deleted*/

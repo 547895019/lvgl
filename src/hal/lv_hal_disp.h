@@ -149,7 +149,9 @@ typedef struct _lv_disp_drv_t {
 #if LV_USE_USER_DATA
     void * user_data; /**< Custom display driver user data*/
 #endif
-
+#ifdef LV_CONF_SUPPORT_WASM
+    void *module_inst;
+#endif
 } lv_disp_drv_t;
 
 /**

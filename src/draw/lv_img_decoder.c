@@ -49,7 +49,22 @@ static lv_res_t lv_img_decoder_built_in_line_indexed(lv_img_decoder_dsc_t * dsc,
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
+#ifdef LV_CONF_SUPPORT_WASM
+static void *wasm_map_ptr(const lv_img_dsc_t *dsc, const void *ptr)
+{
+    void *mapped_ptr;
 
+    if (dsc->module_inst) {
+        wasm_module_inst_t module_inst = (wasm_module_inst_t)dsc->module_inst;
+
+        mapped_ptr = addr_app_to_native((uint32_t)ptr);
+    } else {
+        mapped_ptr = (void *)ptr;
+    }
+
+    return mapped_ptr;
+}
+#endif
 /**
  * Initialize the image decoder module
  */
@@ -392,7 +407,12 @@ lv_res_t lv_img_decoder_built_in_open(lv_img_decoder_t * decoder, lv_img_decoder
         if(dsc->src_type == LV_IMG_SRC_VARIABLE) {
             /*In case of uncompressed formats the image stored in the ROM/RAM.
              *So simply give its pointer*/
+#ifdef LV_CONF_SUPPORT_WASM
+            lv_img_dsc_t *p_src = (lv_img_dsc_t *)dsc->src;
+            dsc->img_data = (const uint8_t *)wasm_map_ptr(p_src, p_src->data);
+#else
             dsc->img_data = ((lv_img_dsc_t *)dsc->src)->data;
+#endif
             return LV_RES_OK;
         }
         else {
@@ -441,8 +461,12 @@ lv_res_t lv_img_decoder_built_in_open(lv_img_decoder_t * decoder, lv_img_decoder
         }
         else {
             /*The palette begins in the beginning of the image data. Just point to it.*/
+#ifdef LV_CONF_SUPPORT_WASM
+            lv_img_dsc_t *p_src = (lv_img_dsc_t *)dsc->src;
+            lv_color32_t * palette_p = (lv_color32_t *)wasm_map_ptr(p_src, p_src->data);
+#else
             lv_color32_t * palette_p = (lv_color32_t *)((lv_img_dsc_t *)dsc->src)->data;
-
+#endif
             uint32_t i;
             for(i = 0; i < palette_size; i++) {
                 user_data->palette[i] = lv_color_make(palette_p[i].ch.red, palette_p[i].ch.green, palette_p[i].ch.blue);
@@ -625,8 +649,11 @@ static lv_res_t lv_img_decoder_built_in_line_alpha(lv_img_decoder_dsc_t * dsc, l
     const uint8_t * data_tmp = NULL;
     if(dsc->src_type == LV_IMG_SRC_VARIABLE) {
         const lv_img_dsc_t * img_dsc = dsc->src;
-
+#ifdef LV_CONF_SUPPORT_WASM
+        data_tmp = (const uint8_t *)wasm_map_ptr(img_dsc, img_dsc->data) + ofs;
+#else
         data_tmp = img_dsc->data + ofs;
+#endif
     }
     else {
         lv_fs_seek(&user_data->f, ofs + 4, LV_FS_SEEK_SET); /*+4 to skip the header*/
@@ -693,7 +720,11 @@ static lv_res_t lv_img_decoder_built_in_line_indexed(lv_img_decoder_dsc_t * dsc,
     const uint8_t * data_tmp = NULL;
     if(dsc->src_type == LV_IMG_SRC_VARIABLE) {
         const lv_img_dsc_t * img_dsc = dsc->src;
+#ifdef LV_CONF_SUPPORT_WASM
+        data_tmp                     = (const uint8_t *)wasm_map_ptr(img_dsc, img_dsc->data) + ofs;
+#else
         data_tmp                     = img_dsc->data + ofs;
+#endif
     }
     else {
         lv_fs_seek(&user_data->f, ofs + 4, LV_FS_SEEK_SET); /*+4 to skip the header*/

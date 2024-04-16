@@ -102,8 +102,22 @@ lv_anim_t * lv_anim_start(const lv_anim_t * a)
             new_anim->start_value += v_ofs;
             new_anim->end_value += v_ofs;
         }
+#ifdef LV_CONF_SUPPORT_WASM
+        if(new_anim->exec_cb && new_anim->var) {
+            if (new_anim->module_inst) {
+                uint32_t argv[2];
 
+                argv[0] = (uint32_t)new_anim->var;
+                argv[1] = (uint32_t)new_anim->start_value;
+
+                lv_run_wasm(new_anim->module_inst, new_anim->exec_cb, 2, argv);
+            } else {
+                new_anim->exec_cb(new_anim->var, new_anim->start_value);
+            }
+        }
+#else
         if(new_anim->exec_cb && new_anim->var) new_anim->exec_cb(new_anim->var, new_anim->start_value);
+#endif
     }
 
     /*Creating an animation changed the linked list.
@@ -384,12 +398,40 @@ static void anim_timer(lv_timer_t * param)
                 if(a->act_time > a->time) a->act_time = a->time;
 
                 int32_t new_value;
-                new_value = a->path_cb(a);
+#ifdef LV_CONF_SUPPORT_WASM
+                if (a->module_inst && !esp_ptr_executable(a->path_cb)) {
+                    uint32_t argv[1];
 
+                    argv[0] = (uint32_t)a;
+
+                    lv_run_wasm(a->module_inst, a->path_cb, 1, argv);
+                    
+                    new_value = (int32_t)argv[0];
+                } else {
+                    new_value = a->path_cb(a);
+                }
+#else
+                new_value = a->path_cb(a);
+#endif
                 if(new_value != a->current_value) {
                     a->current_value = new_value;
                     /*Apply the calculated value*/
+#ifdef LV_CONF_SUPPORT_WASM
+                    if(a->exec_cb) {
+                        if (a->module_inst) {
+                            uint32_t argv[2];
+
+                            argv[0] = (uint32_t)a->var;
+                            argv[1] = (uint32_t)new_value;
+
+                            lv_run_wasm(a->module_inst, a->exec_cb, 2, argv);
+                        } else {
+                            a->exec_cb(a->var, new_value);
+                        }
+                    }
+#else
                     if(a->exec_cb) a->exec_cb(a->var, new_value);
+#endif
                 }
 
                 /*If the time is elapsed the animation is ready*/
@@ -434,7 +476,21 @@ static void anim_ready_handler(lv_anim_t * a)
         anim_mark_list_change();
 
         /*Call the callback function at the end*/
+#ifdef LV_CONF_SUPPORT_WASM
+        if(a->ready_cb != NULL) {
+            if (a->module_inst) {
+                uint32_t argv[1];
+
+                argv[0] = (uint32_t)a;
+
+                lv_run_wasm(a->module_inst, a->ready_cb, 1, argv);
+            } else {
+                a->ready_cb(a);
+            }
+        }
+#else
         if(a->ready_cb != NULL) a->ready_cb(a);
+#endif
         if(a->deleted_cb != NULL) a->deleted_cb(a);
         lv_mem_free(a);
     }

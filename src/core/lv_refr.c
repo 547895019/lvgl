@@ -349,7 +349,21 @@ void _lv_disp_refr_timer(lv_timer_t * tmr)
 
         /*Call monitor cb if present*/
         if(disp_refr->driver->monitor_cb) {
+#ifdef LV_CONF_SUPPORT_WASM
+            if (disp_refr->driver->module_inst) {
+                uint32_t argv[3];
+
+                argv[0] = (uint32_t)disp_refr->driver;
+                argv[1] = (uint32_t)elaps;
+                argv[2] = px_num;
+
+                lv_run_wasm(disp_refr->driver->module_inst, disp_refr->driver->monitor_cb, 3, argv);     
+            } else {
+                disp_refr->driver->monitor_cb(disp_refr->driver, elaps, px_num);
+            }
+#else
             disp_refr->driver->monitor_cb(disp_refr->driver, elaps, px_num);
+#endif
         }
     }
 

@@ -2533,4 +2533,19 @@ LV_EXPORT_CONST_INT(LV_DPI_DEF);
     #endif
 #endif  /*defined(LV_CONF_SKIP)*/
 
+#ifdef CONFIG_LV_CONF_SUPPORT_WASM
+#ifdef CONFIG_WASMACHINE_WASM_EXT_NATIVE_LVGL
+#define LV_CONF_SUPPORT_WASM
+#endif
+#endif
+
+#ifdef LV_CONF_SUPPORT_WASM
+#include "bh_platform.h"
+#include "wasm_export.h"
+#include "wasm_native.h"
+#include "wasm_runtime_common.h"
+
+void lv_run_wasm(void *module_inst, void *cb, int argc, uint32_t *argv);
+#endif /*defined(LV_CONF_SUPPORT_WASM)*/
+
 #endif  /*LV_CONF_INTERNAL_H*/

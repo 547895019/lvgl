@@ -37,11 +37,40 @@
 /**********************
  *   GLOBAL FUNCTIONS
  **********************/
+#ifdef LV_CONF_SUPPORT_WASM
+static void *wasm_map_ptr(const lv_img_dsc_t *dsc, const void *ptr)
+{
+    void *mapped_ptr;
 
+    if (dsc->module_inst) {
+        wasm_module_inst_t module_inst = (wasm_module_inst_t)dsc->module_inst;
+
+        mapped_ptr = addr_app_to_native((uint32_t)ptr);
+    } else {
+        mapped_ptr = (void *)ptr;
+    }
+
+    return mapped_ptr;
+}
+#endif
+/**
+ * Get the color of an image's pixel
+ * @param dsc an image descriptor
+ * @param x x coordinate of the point to get
+ * @param y x coordinate of the point to get
+ * @param color the color of the image. In case of `LV_IMG_CF_ALPHA_1/2/4/8` this color is used.
+ * Not used in other cases.
+ * @param safe true: check out of bounds
+ * @return color of the point
+ */
 lv_color_t lv_img_buf_get_px_color(const lv_img_dsc_t * dsc, lv_coord_t x, lv_coord_t y, lv_color_t color)
 {
     lv_color_t p_color = lv_color_black();
+#ifdef LV_CONF_SUPPORT_WASM
+    uint8_t * buf_u8 = (uint8_t *)wasm_map_ptr(dsc, dsc->data);
+#else
     uint8_t * buf_u8 = (uint8_t *)dsc->data;
+#endif
 
     if(dsc->header.cf == LV_IMG_CF_TRUE_COLOR || dsc->header.cf == LV_IMG_CF_TRUE_COLOR_CHROMA_KEYED ||
        dsc->header.cf == LV_IMG_CF_TRUE_COLOR_ALPHA || dsc->header.cf == LV_IMG_CF_RGB565A8) {
@@ -99,8 +128,11 @@ lv_color_t lv_img_buf_get_px_color(const lv_img_dsc_t * dsc, lv_coord_t x, lv_co
 
 lv_opa_t lv_img_buf_get_px_alpha(const lv_img_dsc_t * dsc, lv_coord_t x, lv_coord_t y)
 {
+#ifdef LV_CONF_SUPPORT_WASM
+    uint8_t * buf_u8 = (uint8_t *)wasm_map_ptr(dsc, dsc->data);
+#else
     uint8_t * buf_u8 = (uint8_t *)dsc->data;
-
+#endif
     if(dsc->header.cf == LV_IMG_CF_TRUE_COLOR_ALPHA) {
         uint32_t px = dsc->header.w * y * LV_IMG_PX_SIZE_ALPHA_BYTE + x * LV_IMG_PX_SIZE_ALPHA_BYTE;
         return buf_u8[px + LV_IMG_PX_SIZE_ALPHA_BYTE - 1];
@@ -154,7 +186,11 @@ lv_opa_t lv_img_buf_get_px_alpha(const lv_img_dsc_t * dsc, lv_coord_t x, lv_coor
 
 void lv_img_buf_set_px_alpha(const lv_img_dsc_t * dsc, lv_coord_t x, lv_coord_t y, lv_opa_t opa)
 {
+#ifdef LV_CONF_SUPPORT_WASM
+    uint8_t * buf_u8 = (uint8_t *)wasm_map_ptr(dsc, dsc->data);
+#else
     uint8_t * buf_u8 = (uint8_t *)dsc->data;
+#endif
 
     if(dsc->header.cf == LV_IMG_CF_TRUE_COLOR_ALPHA) {
         uint8_t px_size          = lv_img_cf_get_px_size(dsc->header.cf) >> 3;
@@ -205,7 +241,11 @@ void lv_img_buf_set_px_alpha(const lv_img_dsc_t * dsc, lv_coord_t x, lv_coord_t 
 
 void lv_img_buf_set_px_color(const lv_img_dsc_t * dsc, lv_coord_t x, lv_coord_t y, lv_color_t c)
 {
+#ifdef LV_CONF_SUPPORT_WASM
+    uint8_t * buf_u8 = (uint8_t *)wasm_map_ptr(dsc, dsc->data);
+#else
     uint8_t * buf_u8 = (uint8_t *)dsc->data;
+#endif
 
     if(dsc->header.cf == LV_IMG_CF_TRUE_COLOR || dsc->header.cf == LV_IMG_CF_TRUE_COLOR_CHROMA_KEYED) {
         uint8_t px_size = lv_img_cf_get_px_size(dsc->header.cf) >> 3;
@@ -272,7 +312,11 @@ void lv_img_buf_set_palette(const lv_img_dsc_t * dsc, uint8_t id, lv_color_t c)
 
     lv_color32_t c32;
     c32.full      = lv_color_to32(c);
+#ifdef LV_CONF_SUPPORT_WASM
+    uint8_t * buf = (uint8_t *)wasm_map_ptr(dsc, dsc->data);
+#else
     uint8_t * buf = (uint8_t *)dsc->data;
+#endif
     lv_memcpy_small(&buf[id * sizeof(c32)], &c32, sizeof(c32));
 }
 

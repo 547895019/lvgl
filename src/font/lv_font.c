@@ -8,6 +8,7 @@
  *********************/
 
 #include "lv_font.h"
+#include "lv_font_fmt_txt.h"
 #include "../misc/lv_utils.h"
 #include "../misc/lv_log.h"
 #include "../misc/lv_assert.h"
@@ -49,7 +50,24 @@
 const uint8_t * lv_font_get_glyph_bitmap(const lv_font_t * font_p, uint32_t letter)
 {
     LV_ASSERT_NULL(font_p);
+#ifdef LV_CONF_SUPPORT_WASM
+    if (!font_p->get_glyph_bitmap) {
+        return lv_font_get_bitmap_fmt_txt(font_p, letter);
+    } else if (font_p->module_inst && !esp_ptr_executable(font_p->get_glyph_bitmap)) {
+        uint32_t argv[2];
+
+        argv[0] = (uint32_t)font_p;
+        argv[1] = letter;
+
+        lv_run_wasm(font_p->module_inst, font_p->get_glyph_bitmap, 2, argv);
+
+        return (const uint8_t *)argv[0];
+    } else {
+        return font_p->get_glyph_bitmap(font_p, letter);
+    }
+#else
     return font_p->get_glyph_bitmap(font_p, letter);
+#endif
 }
 
 /**
@@ -75,9 +93,27 @@ bool lv_font_get_glyph_dsc(const lv_font_t * font_p, lv_font_glyph_dsc_t * dsc_o
     const lv_font_t * f = font_p;
 
     dsc_out->resolved_font = NULL;
-
+	bool found  = false;
     while(f) {
-        bool found = f->get_glyph_dsc(f, dsc_out, letter, letter_next);
+#ifdef LV_CONF_SUPPORT_WASM
+    if (!f->get_glyph_dsc) {
+        found = lv_font_get_glyph_dsc_fmt_txt(f, dsc_out, letter, letter_next);
+    } else if (f->module_inst && !esp_ptr_executable(f->get_glyph_dsc)) {
+        uint32_t argv[4];
+
+        argv[0] = (uint32_t)f;
+        argv[1] = (uint32_t)dsc_out;
+        argv[2] = letter;
+        argv[3] = letter_next;
+
+        lv_run_wasm(f->module_inst,f->get_glyph_dsc, 4, argv);
+        found = (bool)argv[0];
+    } else {
+        found = f->get_glyph_dsc(f, dsc_out, letter, letter_next);
+    }
+#else
+        found = f->get_glyph_dsc(f, dsc_out, letter, letter_next);
+#endif
         if(found) {
             if(!dsc_out->is_placeholder) {
                 dsc_out->resolved_font = f;
@@ -137,8 +173,10 @@ uint16_t lv_font_get_glyph_width(const lv_font_t * font, uint32_t letter, uint32
 {
     LV_ASSERT_NULL(font);
     lv_font_glyph_dsc_t g;
-    lv_font_get_glyph_dsc(font, &g, letter, letter_next);
-    return g.adv_w;
+    bool ret;
+    ret = lv_font_get_glyph_dsc(font, &g, letter, letter_next);
+    if(ret) return g.adv_w;
+    else return 0;
 }
 
 /**********************

@@ -8,7 +8,11 @@ menu "LVGL configuration"
     config LV_CONF_SKIP
         bool "Uncheck this to use custom lv_conf.h"
         default y
-
+        
+    config LV_CONF_SUPPORT_WASM
+        bool "Enable LVGL Wasm support"
+        default n
+        
     config LV_CONF_MINIMAL
         bool "LVGL minimal configuration."
 
