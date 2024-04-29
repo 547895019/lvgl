@@ -45,6 +45,7 @@ typedef struct lv_menu_load_page_event_data_t {
 
 typedef struct {
     lv_obj_t * page;
+	lv_obj_t * prev_obj;
 } lv_menu_history_t;
 
 typedef struct {

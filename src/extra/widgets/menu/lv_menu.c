@@ -688,7 +688,9 @@ static void lv_menu_load_page_event_cb(lv_event_t * e)
             menu->selected_tab = obj;
         }
     }
-
+	lv_ll_t * history_ll = &(menu->history_ll);
+	lv_menu_history_t * act_hist = _lv_ll_get_head(history_ll);
+	act_hist->prev_obj = obj;
     lv_menu_set_page((lv_obj_t *)menu, page);
 
     if(lv_group_get_default() != NULL && menu->sidebar_page == NULL) {
@@ -736,7 +738,10 @@ static void lv_menu_back_event_cb(lv_event_t * e)
             _lv_ll_remove(history_ll, prev_hist);
             menu->cur_depth--;
             lv_menu_set_page(&(menu->obj), prev_hist->page);
-
+			if(lv_group_get_default() != NULL && prev_hist->prev_obj != NULL) {
+				/* Sidebar is not supported for now*/
+				lv_group_focus_obj(prev_hist->prev_obj);
+			}
             lv_mem_free(prev_hist);
         }
     }
