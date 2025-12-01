@@ -88,7 +88,7 @@ lv_obj_t * lv_sysmon_create(lv_display_t * disp)
         return NULL;
     }
 
-    lv_obj_t * label = lv_label_create(lv_display_get_layer_sys(disp));
+    lv_obj_t * label = lv_label_create(lv_display_get_layer_top(disp));
     lv_obj_set_style_bg_opa(label, LV_OPA_50, 0);
     lv_obj_set_style_bg_color(label, lv_color_black(), 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
