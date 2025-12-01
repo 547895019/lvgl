@@ -89,7 +89,10 @@ lv_result_t lv_thread_init(lv_thread_t * pxThread,  const char * const name,
 {
     pxThread->pTaskArg = xAttr;
     pxThread->pvStartRoutine = pvStartRoutine;
-
+#if CONFIG_IDF_CMAKE
+#if CONFIG_LV_DRAW_THREAD_STACK_ON_EXTERNAL_MEMORY && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 0)
+	BaseType_t xTaskCreateStatus = xTaskCreateWithCaps(prvRunThread, name, usStackSize, (void *)pxThread, tskIDLE_PRIORITY + xSchedPriority,&pxThread->xTaskHandle, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
     BaseType_t xTaskCreateStatus = xTaskCreate(
                                        prvRunThread,
                                        name,
@@ -97,7 +100,16 @@ lv_result_t lv_thread_init(lv_thread_t * pxThread,  const char * const name,
                                        (void *)pxThread,
                                        tskIDLE_PRIORITY + xSchedPriority,
                                        &pxThread->xTaskHandle);
-
+#endif
+#else
+    BaseType_t xTaskCreateStatus = xTaskCreate(
+                                       prvRunThread,
+                                       name,
+                                       (configSTACK_DEPTH_TYPE)(usStackSize / sizeof(StackType_t)),
+                                       (void *)pxThread,
+                                       tskIDLE_PRIORITY + xSchedPriority,
+                                       &pxThread->xTaskHandle);
+#endif
     /* Ensure that the FreeRTOS task was successfully created. */
     if(xTaskCreateStatus != pdPASS) {
         LV_LOG_ERROR("xTaskCreate failed!");
@@ -390,15 +402,16 @@ lv_result_t lv_thread_sync_signal_isr(lv_thread_sync_t * pxCond)
 
 void lv_freertos_task_switch_in(const char * name)
 {
-    if(lv_strcmp(name, "IDLE")) globals->freertos_idle_task_running = false;
-    else globals->freertos_idle_task_running = true;
+    if(lv_strncmp(name,"IDLE",4) == 0) 
+	globals->freertos_idle_task_running = true;
+    else globals->freertos_idle_task_running = false;
 
-    globals->freertos_task_switch_timestamp = lv_tick_get();
+    globals->freertos_task_switch_timestamp = xTaskGetTickCount();
 }
 
 void lv_freertos_task_switch_out(void)
 {
-    uint32_t elaps = lv_tick_elaps(globals->freertos_task_switch_timestamp);
+    uint32_t elaps = xTaskGetTickCount() - globals->freertos_task_switch_timestamp;
     if(globals->freertos_idle_task_running) globals->freertos_idle_time_sum += elaps;
     else globals->freertos_non_idle_time_sum += elaps;
 }

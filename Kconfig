@@ -206,7 +206,12 @@ menu "LVGL configuration"
 			depends on LV_USE_OS > 0
 			help
 				If FreeType or ThorVG is enabled, it is recommended to set it to 32KB or more.
-
+				
+		config LV_DRAW_THREAD_STACK_ON_EXTERNAL_MEMORY
+			bool "Draw thread Stack on external memory"
+			default n
+			depends on IDF_CMAKE && !LV_OS_NONE
+			
 		config LV_DRAW_THREAD_PRIO
 			int "Thread priority for the drawing thread"
 			range 0 4
