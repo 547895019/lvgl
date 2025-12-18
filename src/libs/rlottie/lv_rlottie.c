@@ -11,6 +11,7 @@
 
 #include "lv_rlottie_private.h"
 #include "../../core/lv_obj_class_private.h"
+#include "../../misc/cache/lv_cache.h"
 #include <rlottie_capi.h>
 #include <string.h>
 
